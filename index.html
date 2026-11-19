@@ -49,7 +49,7 @@ input,select,textarea{background:var(--bg);color:var(--tx);border:1px solid var(
 .alert{margin:12px 14px;padding:10px;border-radius:12px;background:color-mix(in srgb,var(--bad) 14%,var(--card));border:1px solid var(--bad);font-weight:600}
 .hint{margin:14px;color:var(--mut);font-size:13px;text-align:center}
 .ov{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:20;display:flex;align-items:center;justify-content:center;padding:16px}
-.md{background:var(--card);border-radius:16px;padding:16px;width:100%;max-width:420px;border:1px solid var(--ln)}
+.md{background:var(--card);border-radius:16px;padding:16px;width:100%;max-width:420px;border:1px solid var(--ln);max-height:90vh;overflow:auto}
 .md h3{margin:0 0 4px}.md p{margin:0 0 10px;color:var(--mut);font-size:14px}.md .btn{margin-top:8px}
 </style>
 </head>
@@ -58,6 +58,7 @@ input,select,textarea{background:var(--bg);color:var(--tx);border:1px solid var(
 <main id="v"></main>
 <nav id="nav"></nav>
 <div id="modal"></div>
+<script src="xlsx.min.js"></script>
 <script>
 const $=s=>document.querySelector(s),K="financas-v1";
 let D={cats:["Moradia","Alimentação","Transporte","Saúde","Lazer","Educação","Contas","Outros"],tx:[],bills:[],sav:[],m:""},T="res",C={f:"all",s:"open"},uid=Date.now();
@@ -74,12 +75,13 @@ const addM=(iso,n)=>{const[y,m,d]=iso.split("-").map(Number),dim=new Date(y,m+n,
 const du=iso=>Math.round((new Date(iso+"T00:00:00")-new Date(today()+"T00:00:00"))/864e5);
 const opts=(a,s)=>a.map(x=>`<option${x===s?" selected":""}>${esc(x)}</option>`).join("");
 const bal=s=>sum(s.moves.map(m=>({v:m.v})));
+const NEW='<option value="__new">➕ Nova categoria…</option>',catO=s=>opts(!s||D.cats.includes(s)?D.cats:D.cats.concat([s]),s)+NEW,ac=c=>{if(c&&!D.cats.includes(c))D.cats.push(c);return c};
 const KL={fixa:"Fixa",variavel:"Variável",boleto:"Boleto"};
 function badge(b){if(b.paid)return`<span class="badge g">Paga em ${fd(b.pd)}</span>`;const n=du(b.d);
  if(n<0)return`<span class="badge r">Vencida há ${-n} dia${n<-1?"s":""}</span>`;
  if(n===0)return`<span class="badge w">Vence hoje</span>`;
  return`<span class="badge ${n<=7?"w":""}">Vence em ${n} dia${n>1?"s":""}</span>`}
-function billRow(b){return`<div class="row"><div class="mn"><b>${esc(b.n)}</b><small>${KL[b.k]} · ${esc(b.c)} · vence ${fd(b.d)}${b.rec?" · 🔁 todo mês":""}</small>${badge(b)}</div><div class="rt"><b>${money(b.v)}</b>${b.paid?`<button class="sm" data-a="unpay" data-id="${b.id}">Desfazer</button>`:`<button class="sm ok" data-a="pay" data-id="${b.id}">✔ Paga</button>`}<button class="x" data-a="delb" data-id="${b.id}" aria-label="Apagar">✕</button></div></div>`}
+function billRow(b){return`<div class="row"><div class="mn"><b>${esc(b.n)}</b><small>${KL[b.k]} · ${esc(b.c)} · vence ${fd(b.d)}${b.rec?" · 🔁 todo mês":""}</small>${badge(b)}</div><div class="rt"><b>${money(b.v)}</b>${b.paid?`<button class="sm" data-a="unpay" data-id="${b.id}">Desfazer</button>`:`<button class="sm ok" data-a="pay" data-id="${b.id}">✔ Paga</button>`}<button class="x" data-a="edb" data-id="${b.id}" aria-label="Editar">✎</button><button class="x" data-a="delb" data-id="${b.id}" aria-label="Apagar">✕</button></div></div>`}
 function res(){
  const tm=D.tx.filter(x=>x.d.startsWith(D.m)),r=sum(tm.filter(x=>x.t==="r")),g=sum(tm.filter(x=>x.t==="g"));
  const open=D.bills.filter(b=>!b.paid).sort((a,b)=>a.d<b.d?-1:1),late=open.filter(b=>du(b.d)<0),mo=open.filter(b=>b.d.startsWith(D.m));
@@ -88,33 +90,33 @@ function res(){
  return(late.length?`<div class="alert">⚠️ ${late.length} conta${late.length>1?"s":""} vencida${late.length>1?"s":""}: ${money(sum(late))}</div>`:"")+
  `<div class="grid"><div class="box"><small>Receitas</small><b class="g">${money(r)}</b></div><div class="box"><small>Gastos</small><b class="r">${money(g)}</b></div>
  <div class="box"><small>Saldo do mês</small><b class="${r-g<0?"r":"g"}">${money(r-g)}</b></div><div class="box"><small>Guardado (poupança/invest.)</small><b>${money(D.sav.reduce((a,s)=>a+bal(s),0))}</b></div>
- <div class="box full" style="grid-column:1/3"><small>Contas ainda a pagar neste mês</small><b class="w">${money(sum(mo))}</b> <small style="display:inline">(${mo.length})</small></div></div>
+ <div class="box full" style="grid-column:1/3"><small>Contas ainda a pagar neste mês</small><b class="w">${money(sum(mo))}</b> <small style="display:inline">(${mo.length})</small></div><div class="box" style="grid-column:1/3"><small>Sobra prevista do mês (receitas − gastos − contas a pagar)</small><b class="${r-g-sum(mo)<0?"r":"g"}">${money(r-g-sum(mo))}</b></div></div>
  <h2>Próximas contas a vencer</h2>${open.slice(0,5).map(billRow).join("")||'<p class="hint">Nenhuma conta pendente 🎉</p>'}
  <h2>Gastos por categoria</h2>${cs.map(([c,v])=>`<div class="cb"><div><span>${esc(c)}</span><b>${money(v)}</b></div><div class="bar"><i style="width:${v/mx*100}%"></i></div></div>`).join("")||'<p class="hint">Sem gastos neste mês.</p>'}
- <div class="add"><h3>Backup</h3><div class="f"><button class="btn alt" data-a="ex">Exportar</button><button class="btn alt" data-a="im">Importar</button></div></div>`}
+ <div class="add"><h3>Backup</h3><div class="f"><button class="btn alt full" data-a="xl">📥 Exportar para Excel (.xlsx)</button><button class="btn alt" data-a="ex">Backup (copiar)</button><button class="btn alt" data-a="im">Importar</button></div></div>`}
 function lan(){
  const tm=D.tx.filter(x=>x.d.startsWith(D.m)).sort((a,b)=>a.d<b.d?1:-1);
  return`<div class="add"><h3>➕ Novo lançamento</h3><div class="f"><select id="tT"><option value="g">Gasto</option><option value="r">Receita</option></select><input type="date" id="tD" value="${today()}">
- <input class="full" type="text" id="tN" placeholder="Descrição (ex.: Mercado)"><input type="number" id="tV" placeholder="Valor R$" inputmode="decimal" step="any"><select id="tC">${opts(D.cats)}</select>
+ <input class="full" type="text" id="tN" placeholder="Descrição (ex.: Mercado)"><input type="number" id="tV" placeholder="Valor R$" inputmode="decimal" step="any"><select id="tC">${catO()}</select>
  <button class="btn full" data-a="addtx">Adicionar</button></div></div>
- <h2>Lançamentos do mês</h2>${tm.map(x=>`<div class="row"><div class="mn"><b>${esc(x.n)}</b><small>${fd(x.d)} · ${x.t==="r"?"Receita":esc(x.c)}</small></div><div class="rt"><b class="${x.t==="r"?"g":"r"}">${x.t==="r"?"+":"−"}${money(x.v)}</b><button class="x" data-a="deltx" data-id="${x.id}">✕</button></div></div>`).join("")||'<p class="hint">Nada lançado neste mês.</p>'}
+ <h2>Lançamentos do mês</h2>${tm.map(x=>`<div class="row"><div class="mn"><b>${esc(x.n)}</b><small>${fd(x.d)} · ${x.t==="r"?"Receita":esc(x.c)}</small></div><div class="rt"><b class="${x.t==="r"?"g":"r"}">${x.t==="r"?"+":"−"}${money(x.v)}</b><button class="x" data-a="edt" data-id="${x.id}" aria-label="Editar">✎</button><button class="x" data-a="deltx" data-id="${x.id}">✕</button></div></div>`).join("")||'<p class="hint">Nada lançado neste mês.</p>'}
  <h2>Categorias</h2><div class="chips">${D.cats.map(c=>`<button data-a="delcat" data-v="${esc(c)}">${esc(c)} ✕</button>`).join("")}</div>
  <div class="add"><div class="f"><input type="text" id="cN" placeholder="Nova categoria"><button class="btn" data-a="addcat">Adicionar</button></div></div>`}
 function con(){
- let L=D.bills.filter(b=>(C.f==="all"||b.k===C.f)&&(C.s==="open"?!b.paid:b.paid&&b.pd.startsWith(D.m))).sort((a,b)=>a.d<b.d?-1:1);
+ let L=D.bills.filter(b=>(C.f==="all"||b.k===C.f)&&(C.s==="open"?!b.paid&&b.d.slice(0,7)<=D.m:b.paid&&b.pd.startsWith(D.m))).sort((a,b)=>a.d<b.d?-1:1);
  const ch=(a,k,v,l)=>`<button class="${C[k]===v?"on":""}" data-a="${a}" data-v="${v}">${l}</button>`;
  return`<div class="chips">${ch("s","s","open","A pagar")}${ch("s","s","paid","Pagas no mês")}</div><div class="chips">${ch("f","f","all","Todas")}${ch("f","f","fixa","Fixas")}${ch("f","f","variavel","Variáveis")}${ch("f","f","boleto","Boletos")}</div>
  <div class="grid" style="margin:0 14px"><div class="box"><small>Total da lista</small><b>${money(sum(L))}</b></div><div class="box"><small>Itens</small><b>${L.length}</b></div></div>
  ${L.map(billRow).join("")||'<p class="hint">Nenhuma conta aqui.</p>'}
  <div class="add"><h3>➕ Nova conta / boleto</h3><div class="f"><input class="full" type="text" id="bN" placeholder="Nome (ex.: Aluguel, Boleto escola)"><input type="number" id="bV" placeholder="Valor R$" inputmode="decimal" step="any"><input type="date" id="bD" value="${today()}">
- <select id="bK"><option value="fixa">Fixa</option><option value="variavel">Variável</option><option value="boleto">Boleto</option></select><select id="bC">${opts(D.cats)}</select>
+ <select id="bK"><option value="fixa">Fixa</option><option value="variavel">Variável</option><option value="boleto">Boleto</option></select><select id="bC">${catO()}</select>
  <label class="full" style="font-size:14px"><input type="checkbox" id="bR" style="width:auto"> Repetir todo mês (cria a próxima ao pagar)</label><button class="btn full" data-a="addbill">Adicionar</button></div></div>`}
 function poup(){
- return`${D.sav.map(s=>{const b=bal(s),p=s.goal>0?Math.min(100,b/s.goal*100):0;return`<div class="row" style="display:block"><div style="display:flex;justify-content:space-between"><div class="mn"><b>${esc(s.n)}</b><small>${esc(s.k)}${s.goal>0?" · meta "+money(s.goal):""}</small></div><div class="rt"><b>${money(b)}</b><button class="x" data-a="delsav" data-id="${s.id}">✕</button></div></div>
+ return`${D.sav.map(s=>{const b=bal(s),p=s.goal>0?Math.min(100,b/s.goal*100):0;return`<div class="row" style="display:block"><div style="display:flex;justify-content:space-between"><div class="mn"><b>${esc(s.n)}</b><small>${esc(s.k)}${s.goal>0?" · meta "+money(s.goal):""}</small></div><div class="rt"><b>${money(b)}</b><button class="x" data-a="eds" data-id="${s.id}" aria-label="Editar">✎</button><button class="x" data-a="delsav" data-id="${s.id}">✕</button></div></div>
  ${s.goal>0?`<div class="bar"><i style="width:${p}%"></i></div><small style="color:var(--mut)">${p.toFixed(0)}% da meta</small>`:""}
  <div class="f" style="margin-top:8px;grid-template-columns:1fr auto auto"><input type="number" id="mv${s.id}" placeholder="Valor R$" inputmode="decimal" step="any"><button class="sm ok" data-a="mv" data-s="1" data-id="${s.id}">Aportar</button><button class="sm" data-a="mv" data-s="-1" data-id="${s.id}">Retirar</button></div>
  ${s.moves.slice(-3).reverse().map(m=>`<small style="display:block;color:var(--mut);margin-top:4px">${fd(m.d)} · ${m.v>0?"+":"−"}${money(Math.abs(m.v))}</small>`).join("")}</div>`}).join("")||'<p class="hint">Crie sua primeira poupança ou investimento abaixo.</p>'}
- <div class="add"><h3>➕ Nova poupança / investimento</h3><div class="f"><input class="full" type="text" id="sN" placeholder="Nome (ex.: Reserva, Tesouro Selic)"><select id="sK">${opts(["Poupança","Investimento","Reserva de emergência","Outro"])}</select>
+ <div class="add"><h3>➕ Nova poupança / investimento</h3><div class="f"><input class="full" type="text" id="sN" placeholder="Nome (ex.: Reserva, Tesouro Selic)"><select id="sK">${opts(["Poupança","Investimento","Reserva de emergência","Outro"])}<option value="__new">➕ Outro tipo…</option></select>
  <input type="number" id="sG" placeholder="Meta R$ (opcional)" inputmode="decimal" step="any"><input class="full" type="number" id="sV" placeholder="Saldo inicial R$ (opcional)" inputmode="decimal" step="any"><button class="btn full" data-a="addsav">Criar</button></div></div>`}
 function render(){
  const ml=new Date(+D.m.slice(0,4),+D.m.slice(5)-1,1).toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
@@ -125,16 +127,28 @@ function modal(h){const m=$("#modal");m.innerHTML=h?`<div class="ov"><div class=
 function ask(msg,fn){modal(`<h3>Confirmar</h3><p>${esc(msg)}</p><button class="btn" id="ay" style="background:var(--bad)">Sim, apagar</button><button class="btn alt" id="an">Cancelar</button>`);$("#an").onclick=()=>modal();$("#ay").onclick=()=>{modal();fn()}}
 function data(t,hint,val,lab,fn){modal(`<h3>${t}</h3><p id="dh">${hint}</p><textarea id="dt" rows="8"></textarea><button class="btn" id="db">${lab}</button><button class="btn alt" id="dc">Fechar</button>`);const x=$("#dt");x.value=val;$("#dc").onclick=()=>modal();$("#db").onclick=()=>fn(x)}
 const num=id=>parseFloat($(id).value)||0,val=id=>$(id).value.trim();
+function xlsx(){
+ if(!window.XLSX){modal(`<h3>Excel</h3><p>A exportação para Excel funciona no app instalado (o do GitHub). Aqui, use o Backup.</p><button class="btn alt" data-a="cl">Fechar</button>`);return}
+ const dt=x=>new Date(x+"T12:00:00"),mf='"R$" #,##0.00';
+ const sh=(h,rows,w)=>{const ws=XLSX.utils.aoa_to_sheet([h].concat(rows),{cellDates:true});Object.keys(ws).forEach(k=>{if(k[0]==="!")return;const c=ws[k];if(c.t==="d")c.z="dd/mm/yyyy";else if(c.t==="n")c.z=mf});ws["!cols"]=w.map(x=>({wch:x}));return ws};
+ const wb=XLSX.utils.book_new(),ms=[...new Set(D.tx.map(x=>x.d.slice(0,7)).concat(D.bills.map(b=>b.d.slice(0,7))))].sort();
+ const res=ms.map(m=>{const r=sum(D.tx.filter(x=>x.d.startsWith(m)&&x.t==="r")),g=sum(D.tx.filter(x=>x.d.startsWith(m)&&x.t==="g")),p=sum(D.bills.filter(b=>!b.paid&&b.d.startsWith(m)));return[m.slice(5)+"/"+m.slice(0,4),r,g,p,r-g-p]});
+ XLSX.utils.book_append_sheet(wb,sh(["Mês","Receitas","Gastos pagos","Contas a pagar","Sobra prevista"],res,[10,16,16,16,16]),"Resumo mensal");
+ XLSX.utils.book_append_sheet(wb,sh(["Nome","Tipo","Categoria","Vencimento","Valor","Status","Pago em","Repete"],D.bills.slice().sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:0).map(b=>[b.n,KL[b.k],b.c,dt(b.d),b.v,b.paid?"Paga":"A pagar",b.pd?dt(b.pd):"",b.rec?"Sim":"Não"]),[26,10,20,13,14,10,13,8]),"Contas");
+ XLSX.utils.book_append_sheet(wb,sh(["Data","Tipo","Descrição","Categoria","Valor"],D.tx.slice().sort((a,b)=>a.d<b.d?-1:a.d>b.d?1:0).map(x=>[dt(x.d),x.t==="r"?"Receita":"Gasto",x.n,x.c,x.v]),[13,10,28,20,14]),"Lançamentos");
+ XLSX.utils.book_append_sheet(wb,sh(["Nome","Tipo","Meta","Saldo"],D.sav.map(s=>[s.n,s.k,s.goal||"",bal(s)]),[26,22,14,14]),"Poupança");
+ XLSX.writeFile(wb,"financas-"+today()+".xlsx")}
+document.addEventListener("change",e=>{const s=e.target;if(s.tagName==="SELECT"&&s.value==="__new"){const i=document.createElement("input");i.type="text";i.id=s.id;i.placeholder=s.id==="sK"||s.id==="eK"?"Nome do tipo":"Nome da nova categoria";s.replaceWith(i);i.focus()}});
 document.addEventListener("click",e=>{const el=e.target.closest("[data-a]");if(!el)return;const a=el.dataset.a,id=+el.dataset.id,v=el.dataset.v;
  if(a==="tab"){T=v}
  else if(a==="mp")D.m=addM(D.m+"-01",-1).slice(0,7);
  else if(a==="mn")D.m=addM(D.m+"-01",1).slice(0,7);
  else if(a==="f"||a==="s")C[a]=v;
- else if(a==="addtx"){const n=val("#tN"),x=num("#tV");if(!n||x<=0)return;D.tx.push({id:nid(),t:val("#tT"),n,v:x,c:val("#tC"),d:$("#tD").value||today()})}
+ else if(a==="addtx"){const n=val("#tN"),x=num("#tV");if(!n||x<=0)return;ac(val("#tC"));D.tx.push({id:nid(),t:val("#tT"),n,v:x,c:val("#tC"),d:$("#tD").value||today()})}
  else if(a==="deltx")D.tx=D.tx.filter(x=>x.id!==id);
  else if(a==="addcat"){const c=val("#cN");if(c&&!D.cats.includes(c))D.cats.push(c)}
  else if(a==="delcat"){ask("Remover a categoria "+v+"? Lançamentos antigos continuam com o nome.",()=>{D.cats=D.cats.filter(c=>c!==v);save();render()});return}
- else if(a==="addbill"){const n=val("#bN"),x=num("#bV");if(!n||x<=0)return;D.bills.push({id:nid(),n,v:x,d:$("#bD").value||today(),k:val("#bK"),c:val("#bC"),rec:$("#bR").checked,paid:false,pd:null})}
+ else if(a==="addbill"){const n=val("#bN"),x=num("#bV");if(!n||x<=0)return;ac(val("#bC"));D.bills.push({id:nid(),n,v:x,d:$("#bD").value||today(),k:val("#bK"),c:val("#bC"),rec:$("#bR").checked,paid:false,pd:null})}
  else if(a==="pay"){const b=D.bills.find(b=>b.id===id);b.paid=true;b.pd=today();D.tx.push({id:nid(),t:"g",n:b.n,v:b.v,c:b.c,d:b.pd,bid:b.id});
   if(b.rec){const nd=addM(b.d,1);if(!D.bills.some(o=>o.n===b.n&&o.d===nd))D.bills.push({...b,id:nid(),d:nd,paid:false,pd:null})}}
  else if(a==="unpay"){const b=D.bills.find(b=>b.id===id);b.paid=false;b.pd=null;D.tx=D.tx.filter(x=>x.bid!==id)}
@@ -142,8 +156,18 @@ document.addEventListener("click",e=>{const el=e.target.closest("[data-a]");if(!
  else if(a==="addsav"){const n=val("#sN");if(!n)return;const s={id:nid(),n,k:val("#sK"),goal:num("#sG"),moves:[]};if(num("#sV"))s.moves.push({id:nid(),d:today(),v:num("#sV")});D.sav.push(s)}
  else if(a==="mv"){const x=num("#mv"+id);if(x<=0)return;D.sav.find(s=>s.id===id).moves.push({id:nid(),d:today(),v:x*(+el.dataset.s)})}
  else if(a==="delsav"){ask("Apagar esta poupança/investimento e o histórico dele?",()=>{D.sav=D.sav.filter(s=>s.id!==id);save();render()});return}
+ else if(a==="xl"){xlsx();return}
+ else if(a==="cl"){modal();return}
+ else if(a==="edb"){const b=D.bills.find(b=>b.id===id);modal(`<h3>Editar conta</h3><div class="f"><input class="full" id="eN" value="${esc(b.n)}"><input type="number" id="eV" step="any" inputmode="decimal" value="${b.v}"><input type="date" id="eD" value="${b.d}"><select id="eK">${["fixa","variavel","boleto"].map(k=>`<option value="${k}"${k===b.k?" selected":""}>${KL[k]}</option>`).join("")}</select><select id="eC">${catO(b.c)}</select><label class="full" style="font-size:14px"><input type="checkbox" id="eR" style="width:auto"${b.rec?" checked":""}> Repetir todo mês</label><label class="full" style="font-size:14px"><input type="checkbox" id="eA" style="width:auto"> Aplicar também às próximas contas com o mesmo nome (valor, tipo, categoria e dia do vencimento)</label></div><button class="btn" data-a="svb" data-id="${id}">Salvar</button><button class="btn alt" data-a="cl">Cancelar</button>`);return}
+ else if(a==="svb"){const b=D.bills.find(b=>b.id===id),x=num("#eV"),nn=val("#eN");if(!nn||x<=0)return;ac(val("#eC"));const on=b.n,od=b.d,nd=$("#eD").value||b.d;
+  if($("#eA").checked)D.bills.forEach(o=>{if(o!==b&&o.n===on&&!o.paid&&o.d>od){const[y,m]=o.d.split("-").map(Number),dim=new Date(y,m,0).getDate();Object.assign(o,{n:nn,v:x,k:val("#eK"),c:val("#eC"),rec:$("#eR").checked,d:y+"-"+pad(m)+"-"+pad(Math.min(+nd.slice(8),dim))})}});
+  Object.assign(b,{n:nn,v:x,d:nd,k:val("#eK"),c:val("#eC"),rec:$("#eR").checked});D.tx.filter(t=>t.bid===id).forEach(t=>{t.n=nn;t.v=x;t.c=b.c});modal()}
+ else if(a==="edt"){const t=D.tx.find(t=>t.id===id);modal(`<h3>Editar lançamento</h3><div class="f"><select id="eT"><option value="g"${t.t==="g"?" selected":""}>Gasto</option><option value="r"${t.t==="r"?" selected":""}>Receita</option></select><input type="date" id="eD" value="${t.d}"><input class="full" id="eN" value="${esc(t.n)}"><input type="number" id="eV" step="any" inputmode="decimal" value="${t.v}"><select id="eC">${catO(t.c)}</select></div><button class="btn" data-a="svt" data-id="${id}">Salvar</button><button class="btn alt" data-a="cl">Cancelar</button>`);return}
+ else if(a==="svt"){const t=D.tx.find(t=>t.id===id),x=num("#eV"),nn=val("#eN");if(!nn||x<=0)return;ac(val("#eC"));Object.assign(t,{t:val("#eT"),n:nn,v:x,d:$("#eD").value||t.d,c:val("#eC")});modal()}
+ else if(a==="eds"){const s=D.sav.find(s=>s.id===id);modal(`<h3>Editar</h3><div class="f"><input class="full" id="eN" value="${esc(s.n)}"><select id="eK">${opts(["Poupança","Investimento","Reserva de emergência","Outro"].includes(s.k)?["Poupança","Investimento","Reserva de emergência","Outro"]:["Poupança","Investimento","Reserva de emergência","Outro",s.k],s.k)}<option value="__new">➕ Outro tipo…</option></select><input type="number" id="eV" step="any" inputmode="decimal" value="${s.goal||""}" placeholder="Meta R$"></div><button class="btn" data-a="svs" data-id="${id}">Salvar</button><button class="btn alt" data-a="cl">Cancelar</button>`);return}
+ else if(a==="svs"){const s=D.sav.find(s=>s.id===id),nn=val("#eN");if(!nn)return;Object.assign(s,{n:nn,k:val("#eK"),goal:num("#eV")});modal()}
  else if(a==="ex"){data("Exportar","Toque em Copiar e guarde o texto em lugar seguro.",JSON.stringify(D),"Copiar",x=>{x.focus();x.select();try{document.execCommand("copy")}catch(e){}try{navigator.clipboard.writeText(x.value)}catch(e){}$("#dh").textContent="Copiado! Se não copiou, segure no texto e escolha Copiar."});return}
- else if(a==="im"){data("Importar","Cole o texto exportado. Isso substitui os dados atuais.","","Importar",x=>{let o;try{o=JSON.parse(x.value)}catch(e){}if(!o||!Array.isArray(o.tx)){$("#dh").textContent="Texto inválido.";return}D=Object.assign(D,o);D.m=today().slice(0,7);save();modal();render()});return}
+ else if(a==="im"){data("Importar","Cole o texto exportado. Isso substitui os dados atuais.","","Importar",x=>{let o;try{o=JSON.parse(x.value)}catch(e){}if(!o||!Array.isArray(o.tx)){$("#dh").textContent="Texto inválido.";return}D=Object.assign(D,o);D.m=today().slice(0,7);save();modal();render()});$("#dt").insertAdjacentHTML("beforebegin",'<input type="file" id="fi" accept=".txt,.json" style="margin-bottom:8px">');$("#fi").onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=()=>{$("#dt").value=r.result};r.readAsText(f)};return}
  save();render()});
 render();
 if("serviceWorker" in navigator&&/^https?:/.test(location.protocol)&&location.hostname.indexOf("claude")<0){try{navigator.serviceWorker.register("sw.js").catch(function(){})}catch(e){}}
